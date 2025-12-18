@@ -1,14 +1,10 @@
-// src/app/cart/CartClient.tsx
 "use client";
-
 import { CartItemCard } from "core/components/cart-item-card/cart-item-card";
 import { Summary } from "core/components/summary/summary";
 import styles from "./page.module.scss";
 import { CartItem } from "./serverCart";
 
-type CartClientProps = {
-  products: CartItem[];
-};
+type CartClientProps = { products: CartItem[] };
 
 export default function CartClient({ products }: CartClientProps) {
   return products.length > 0 ? (
@@ -18,7 +14,6 @@ export default function CartClient({ products }: CartClientProps) {
           <CartItemCard key={p.product.id} product={p.product} quantity={p.quantity} />
         ))}
       </div>
-
       <div className={styles.summary}>
         <Summary />
       </div>
