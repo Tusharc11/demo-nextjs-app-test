@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { FakeAPIProduct } from "core/types/product";
 import styles from "./page.module.scss";
 import { ProductList } from "core/components/product-list/product-list";
