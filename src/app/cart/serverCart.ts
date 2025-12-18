@@ -1,3 +1,4 @@
+// src/app/cart/serverCart.ts
 import { FakeAPIProduct } from "core/types/product";
 
 export type CartItem = {
@@ -6,28 +7,30 @@ export type CartItem = {
 };
 
 export async function getCartProducts(): Promise<CartItem[]> {
-  // Step 1: fetch carts
-  const cartsRes = await fetch("https://fakestoreapi.com/carts", { cache: "no-store" });
-  if (!cartsRes.ok) return [];
+  try {
+    const cartsRes = await fetch("https://fakestoreapi.com/carts", { cache: "no-store" });
+    if (!cartsRes.ok) return [];
 
-  const cartsData: { products: { productId: number; quantity: number }[] }[] = await cartsRes.json();
+    const cartsData = await cartsRes.json();
 
-  // Step 2: flatten all cart products
-  const cartProducts: CartItem[] = [];
+    // fetch all products to match IDs
+    const productsRes = await fetch("https://fakestoreapi.com/products");
+    if (!productsRes.ok) return [];
 
-  for (const cart of cartsData) {
-    for (const item of cart.products) {
-      // Fetch full product details
-      const productRes = await fetch(`https://fakestoreapi.com/products/${item.productId}`);
-      if (!productRes.ok) continue;
+    const allProducts: FakeAPIProduct[] = await productsRes.json();
 
-      const product: FakeAPIProduct = await productRes.json();
-      cartProducts.push({
-        product,
-        quantity: item.quantity,
+    const cartItems: CartItem[] = [];
+
+    cartsData.forEach((cart: any) => {
+      cart.products.forEach((item: any) => {
+        const product = allProducts.find(p => p.id === item.productId);
+        if (product) cartItems.push({ product, quantity: item.quantity });
       });
-    }
-  }
+    });
 
-  return cartProducts;
+    return cartItems;
+  } catch (err) {
+    console.error("Failed to fetch cart products:", err);
+    return [];
+  }
 }
