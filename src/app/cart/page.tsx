@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 "use client";
 
 import { CartItemCard } from "core/components/cart-item-card/cart-item-card";
