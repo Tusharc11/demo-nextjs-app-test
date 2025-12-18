@@ -1,0 +1,935 @@
+# AWS Amplify Configuration for ERP Application
+
+Let me break this down into comprehensive steps for your Next.js ERP application deployment.
+
+## 1. AWS Amplify Setup & GitHub Deployment
+
+### Console Steps:
+1. **Navigate to AWS Amplify Console**
+   - Go to AWS Console → Search "Amplify" → Click "AWS Amplify"
+   - Click "New app" → "Host web app"
+
+2. **Connect GitHub Repository**
+   - Select "GitHub" as source
+   - Click "Authorize AWS Amplify" (first time only)
+   - Select your repository and branch
+   - Click "Next"
+
+3. **Configure Build Settings**
+   - Amplify auto-detects Next.js
+   - Default build settings should look like:
+   ```yaml
+   version: 1
+   frontend:
+     phases:
+       preBuild:
+         commands:
+           - npm ci
+       build:
+         commands:
+           - npm run build
+     artifacts:
+       baseDirectory: .next
+       files:
+         - '**/*'
+     cache:
+       paths:
+         - node_modules/**/*
+   ```
+
+4. **Important Next.js Configuration**
+   - In your `next.config.js`, ensure:
+   ```javascript
+   module.exports = {
+     output: 'standalone', // For optimal Amplify performance
+     // OR if using SSR/API routes heavily
+     // Leave default, Amplify handles it
+   }
+   ```
+
+## 2. Custom Domain Setup (Hostinger)
+
+### Steps:
+1. **In AWS Amplify Console**
+   - Go to your app → "Domain management" → "Add domain"
+   - Enter your domain (e.g., `example.com`)
+   - Click "Configure domain"
+
+2. **AWS Provides DNS Records**
+   - Amplify will show you CNAME records to add
+   - Example:
+     - Type: `CNAME`
+     - Name: `www` (or subdomain)
+     - Value: `xxx.amplifyapp.com`
+
+3. **In Hostinger DNS Management**
+   - Log in to Hostinger
+   - Go to Domain → DNS/Name Servers
+   - Add CNAME records provided by AWS:
+     ```
+     Type: CNAME
+     Name: www (or your subdomain)
+     Points to: [AWS Amplify domain]
+     TTL: 3600 (or default)
+     ```
+   - For root domain (@), you may need:
+     - Type: `ALIAS` or `ANAME` (if supported)
+     - OR use `CNAME` for `www` and redirect root to `www`
+
+4. **SSL Certificate (Your Existing Certificate)**
+   - **Option A: Use AWS Certificate Manager (Recommended)**
+     - In Amplify, AWS automatically provisions SSL via ACM
+     - Your Hostinger cert won't be directly usable in Amplify
+     - AWS manages renewal automatically
+   
+   - **Option B: Upload Custom Certificate**
+     - Amplify doesn't support custom SSL upload directly
+     - You'd need CloudFront distribution (see below)
+     - **Recommendation**: Use AWS ACM free certificates instead
+
+   **Best Practice**: Let AWS handle SSL certificates through ACM - they're free and auto-renewing.
+
+## 3. External DynamoDB Connection
+
+### Important Note:
+AWS Amplify hosts your application **within AWS infrastructure**. An "external DynamoDB" means:
+- **If it's AWS DynamoDB in different account**: Use cross-account IAM roles
+- **If it's a different database service**: This won't be DynamoDB
+
+### Assuming AWS DynamoDB in Different Account/Region:
+
+1. **Create IAM Role for Amplify**
+   - Go to IAM → Roles → Create Role
+   - Trusted entity: "AWS service" → "Amplify"
+   - Attach policy:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{
+       "Effect": "Allow",
+       "Action": [
+         "dynamodb:GetItem",
+         "dynamodb:PutItem",
+         "dynamodb:UpdateItem",
+         "dynamodb:DeleteItem",
+         "dynamodb:Query",
+         "dynamodb:Scan"
+       ],
+       "Resource": "arn:aws:dynamodb:REGION:ACCOUNT-ID:table/YOUR-TABLE-NAME"
+     }]
+   }
+   ```
+
+2. **Attach Role to Amplify App**
+   - Amplify Console → Your App → "App settings" → "Environment variables"
+   - Add AWS credentials (if cross-account) or use IAM role
+   - Better: Use environment variables with AWS SDK default credentials
+
+3. **In Your Next.js Code**
+   ```javascript
+   import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+   import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+
+   const client = new DynamoDBClient({
+     region: process.env.DYNAMODB_REGION,
+     // Credentials auto-picked from IAM role
+   });
+   
+   const docClient = DynamoDBDocumentClient.from(client);
+   ```
+
+## 4. Environment Variables & Secrets
+
+### Adding Environment Variables:
+
+1. **In Amplify Console**
+   - Your App → "Environment variables"
+   - Click "Manage variables"
+   - Add key-value pairs:
+     ```
+     DATABASE_URL=your-db-url
+     DYNAMODB_TABLE_NAME=your-table
+     DYNAMODB_REGION=us-east-1
+     ```
+
+2. **For Secrets - AWS Secrets Manager Integration**
+
+   **Step 1: Create Secret in AWS Secrets Manager**
+   - Go to AWS Secrets Manager → "Store a new secret"
+   - Choose "Other type of secret"
+   - Add key-value pairs (e.g., API keys, DB passwords)
+   - Name it: `erp-app-secrets`
+   - Copy the ARN
+
+   **Step 2: Grant Amplify Access**
+   - Update IAM role policy (the one attached to Amplify):
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{
+       "Effect": "Allow",
+       "Action": [
+         "secretsmanager:GetSecretValue"
+       ],
+       "Resource": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:erp-app-secrets-*"
+     }]
+   }
+   ```
+
+   **Step 3: In Your Next.js Code**
+   ```javascript
+   import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
+
+   const client = new SecretsManagerClient({ region: "us-east-1" });
+
+   async function getSecret() {
+     const response = await client.send(
+       new GetSecretValueCommand({ SecretId: "erp-app-secrets" })
+     );
+     return JSON.parse(response.SecretString);
+   }
+
+   // Cache secrets at startup
+   let cachedSecrets;
+   export async function getSecrets() {
+     if (!cachedSecrets) {
+       cachedSecrets = await getSecret();
+     }
+     return cachedSecrets;
+   }
+   ```
+
+   **Step 4: Environment Variable Reference**
+   - In Amplify environment variables, add:
+     ```
+     SECRET_ARN=arn:aws:secretsmanager:region:account:secret:name
+     ```
+
+## 5. CloudFront - Do You Need It?
+
+### For Small Scale: **NO, Skip CloudFront**
+- Amplify includes a CDN by default
+- Your app is already distributed globally
+- SSL is included
+
+### When You Need CloudFront:
+- Custom caching strategies
+- WAF (Web Application Firewall) requirements
+- Custom SSL certificate (your Hostinger cert)
+- Advanced routing rules
+- Lambda@Edge functions
+
+**Recommendation**: Start without CloudFront. Amplify's built-in CDN is sufficient for small-to-medium scale.
+
+## 6. Traffic Routing & Scalability
+
+### How Traffic is Routed:
+1. **User Request** → Your Domain (`example.com`)
+2. **DNS Resolution** → CNAME points to Amplify CDN
+3. **CDN Edge Location** → Nearest AWS edge serves static assets
+4. **Server-Side Requests** → Routed to Lambda functions (Amplify auto-creates these for Next.js API routes)
+5. **Database Calls** → From Lambda to your DynamoDB
+
+### Architecture:
+```
+User → DNS (Hostinger) 
+     → Amplify CDN (Global)
+     → Lambda Functions (Auto-scaled)
+     → DynamoDB
+```
+
+### Scalability:
+- **Auto-scaling**: Amplify automatically scales Lambda functions
+- **No configuration needed** for basic auto-scaling
+- **Concurrent executions**: Lambda scales to 1000 concurrent by default
+- **DynamoDB**: Ensure it's set to On-Demand or provisioned appropriately
+
+### To Handle Growth:
+1. **Monitor CloudWatch Metrics**
+   - Go to CloudWatch → Amplify metrics
+   - Watch: Request count, error rates, latency
+
+2. **Enable Auto-scaling (Already On)**
+   - Amplify handles this automatically
+   - Lambda scales per request
+
+3. **DynamoDB Scaling**
+   - Use On-Demand mode (auto-scales) OR
+   - Set provisioned capacity with auto-scaling
+
+4. **If You Outgrow Amplify**
+   - Migrate to ECS/EKS
+   - Use Application Load Balancer
+   - But for most ERPs, Amplify scales well to 100k+ users
+
+## 7. Complete Deployment Checklist
+
+### Pre-Deployment:
+- [ ] Code in GitHub with proper branch
+- [ ] `next.config.js` configured
+- [ ] Environment variables documented
+- [ ] DynamoDB tables created
+- [ ] IAM roles prepared
+
+### Deployment Steps:
+1. [ ] Create Amplify app and connect GitHub
+2. [ ] Configure build settings
+3. [ ] Add environment variables
+4. [ ] Set up AWS Secrets Manager
+5. [ ] Attach IAM role with DynamoDB and Secrets access
+6. [ ] Configure custom domain in Amplify
+7. [ ] Add CNAME records in Hostinger
+8. [ ] Wait for DNS propagation (5-30 minutes)
+9. [ ] Verify SSL certificate (auto-provisioned by AWS)
+10. [ ] Test application endpoints
+11. [ ] Monitor first deployment in Amplify console
+
+### Post-Deployment:
+- [ ] Set up CloudWatch alarms
+- [ ] Configure branch deployments (staging/production)
+- [ ] Enable Amplify monitoring
+- [ ] Test database connectivity
+- [ ] Verify authentication flows
+
+## 8. Next.js Specific Considerations
+
+### Important Configuration:
+
+1. **API Routes**
+   - Place in `pages/api/` or `app/api/`
+   - These become Lambda functions automatically
+
+2. **Middleware**
+   - Supported in Amplify
+   - Use for authentication checks
+
+3. **Environment Variables Access**
+   ```javascript
+   // Server-side only
+   process.env.SECRET_KEY
+   
+   // Client-side (must prefix with NEXT_PUBLIC_)
+   process.env.NEXT_PUBLIC_API_URL
+   ```
+
+4. **Image Optimization**
+   - Amplify supports Next.js Image component
+   - No additional configuration needed
+
+5. **Monorepo Considerations**
+   - If using monorepo, specify build path in Amplify settings
+
+## Summary
+
+**Your Setup Will Be:**
+- GitHub → AWS Amplify (auto-deploy on push)
+- Hostinger DNS → CNAME → Amplify CDN
+- SSL by AWS (free, auto-renewing)
+- Environment variables in Amplify
+- Secrets in AWS Secrets Manager
+- DynamoDB access via IAM role
+- No CloudFront needed initially
+- Auto-scaling handled by Amplify
+
+**Cost Estimate (Small Scale):**
+- Amplify: ~$15-50/month (depends on build minutes and traffic)
+- DynamoDB: Pay per request (on-demand)
+- Secrets Manager: $0.40/month per secret
+- SSL: Free via ACM
+
+This setup is production-ready and will scale from 10 to 10,000+ users without infrastructure changes.
+
+
+
+
+
+=============================================================================================================================================
+
+# Detailed Explanation: AWS Amplify Build Process & Domain Configuration
+
+## Part 1: Do We Need to Build the Code?
+
+### Short Answer: **NO, You Don't Build Locally**
+
+AWS Amplify handles the build process automatically in the cloud. Here's why and how:
+
+---
+
+## Understanding the Build Process
+
+### What Happens When You Connect GitHub to Amplify:
+
+```
+GitHub Repository → AWS Amplify → Build Process → Deployment
+```
+
+### Step-by-Step Flow:
+
+1. **You Push Code to GitHub**
+   - Your Next.js source code (unbuild)
+   - `package.json` with dependencies
+   - Configuration files
+
+2. **Amplify Detects Changes**
+   - Webhook triggers automatically
+   - Amplify pulls latest code from GitHub
+
+3. **Amplify Builds in Cloud** (This is the KEY part)
+   - Amplify creates a temporary build environment
+   - Installs dependencies (`npm install`)
+   - Runs build commands (`npm run build`)
+   - Creates production-ready files
+
+4. **Amplify Deploys**
+   - Hosts static files on CDN
+   - Creates Lambda functions for API routes
+   - Makes your app live
+
+---
+
+## Why You Only Provide Commands (Not Build Yourself)
+
+### Traditional Deployment (What You DON'T Need):
+```bash
+# On your local machine:
+npm install
+npm run build
+# Upload .next folder to server
+```
+
+### Amplify Way (What Actually Happens):
+```yaml
+# You just tell Amplify what commands to run
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci                    # Amplify runs this
+    build:
+      commands:
+        - npm run build             # Amplify runs this
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+```
+
+### Why This Approach?
+
+1. **Consistency**: Same environment every time
+2. **No Local Setup**: No need for build tools on your machine
+3. **Automatic**: Builds happen on every push
+4. **Scalability**: AWS infrastructure handles the build
+5. **Environment Isolation**: Build uses correct Node version, dependencies
+
+---
+
+## Detailed Steps to Configure Build Commands
+
+### Step 1: Access Build Settings in AWS Console
+
+1. **Log in to AWS Console**
+   - Go to https://console.aws.amazon.com
+   - Search for "Amplify" in the search bar
+   - Click "AWS Amplify"
+
+2. **Navigate to Your App**
+   - Click on your app name
+   - Go to "App settings" in left sidebar
+   - Click "Build settings"
+
+### Step 2: Understanding the Build Specification
+
+AWS Amplify uses a YAML file to define build commands. Here's what each part means:
+
+```yaml
+version: 1                          # Build spec version
+
+frontend:                           # For web applications
+  phases:                           # Build phases
+    preBuild:                       # Before building
+      commands:
+        - npm ci                    # Install dependencies (clean install)
+        # Add any pre-build scripts here
+        
+    build:                          # Main build phase
+      commands:
+        - npm run build             # Build Next.js app
+        # This creates the .next folder
+        
+  artifacts:                        # What to deploy
+    baseDirectory: .next            # Where build files are
+    files:
+      - '**/*'                      # Deploy all files from .next
+      
+  cache:                            # Speed up future builds
+    paths:
+      - node_modules/**/*           # Cache dependencies
+```
+
+### Step 3: Default Commands for Next.js
+
+**AWS Amplify Auto-Detects Next.js** and uses these commands by default:
+
+```yaml
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+```
+
+### Step 4: Custom Commands (If Needed)
+
+You might need custom commands for:
+
+**Example 1: Using Environment Variables During Build**
+```yaml
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+        - echo "Building with environment variables"
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+```
+
+**Example 2: Running Database Migrations**
+```yaml
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+    build:
+      commands:
+        - npm run build
+    postBuild:
+      commands:
+        - npm run migrate  # Run DB migrations after build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+```
+
+**Example 3: Monorepo Setup**
+```yaml
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - cd apps/erp-frontend
+        - npm ci
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: apps/erp-frontend/.next
+    files:
+      - '**/*'
+```
+
+### Step 5: Save and Test
+
+1. **In AWS Console**
+   - After editing build settings
+   - Click "Save"
+
+2. **Trigger Build**
+   - Go to your app main page
+   - Click "Redeploy this version" OR
+   - Push new code to GitHub
+
+3. **Monitor Build**
+   - Click on the build in progress
+   - Watch real-time logs
+   - See each command execute
+
+---
+
+## Part 2: Hostinger Domain Configuration (DETAILED)
+
+### Understanding DNS Records: CNAME vs A Record vs ALIAS
+
+Before we proceed, let's understand what each DNS record does:
+
+#### **A Record (Address Record)**
+- Points domain **directly to an IP address**
+- Example: `example.com` → `192.0.2.1`
+- Used for: Root domain typically
+- **Problem**: Amplify doesn't give you a static IP
+
+#### **CNAME Record (Canonical Name)**
+- Points domain **to another domain name**
+- Example: `www.example.com` → `xyz.amplifyapp.com`
+- Used for: Subdomains (www, app, api, etc.)
+- **Limitation**: Cannot be used for root domain (example.com) in standard DNS
+
+#### **ALIAS Record (AWS Route 53 Specific)**
+- Like CNAME but **works for root domain**
+- Example: `example.com` → `xyz.amplifyapp.com`
+- Used for: Root domain in AWS Route 53
+- **Note**: This is AWS-specific, not standard DNS
+
+---
+
+## Detailed Domain Configuration Steps
+
+### Scenario Analysis: What You Need
+
+You have a domain in **Hostinger** and want to use it with **AWS Amplify**.
+
+**You'll need:**
+1. CNAME record for `www.example.com` (subdomain)
+2. Solution for root domain `example.com`
+
+---
+
+### Option 1: Use WWW Subdomain (RECOMMENDED & SIMPLEST)
+
+This is the **easiest and most reliable** method.
+
+#### Step-by-Step Process:
+
+### **STEP 1: Configure Domain in AWS Amplify**
+
+1. **Open AWS Amplify Console**
+   - Go to AWS Console → Amplify
+   - Click your app name
+
+2. **Add Custom Domain**
+   - Left sidebar → Click "Domain management"
+   - Click "Add domain" button
+   - Enter your domain: `example.com`
+   - Click "Configure domain"
+
+3. **AWS Shows You DNS Records**
+   - Amplify will display something like:
+   
+   ```
+   For www.example.com:
+   Type: CNAME
+   Name: www
+   Value: d1234abcd5678.cloudfront.net (or xyz.amplifyapp.com)
+   
+   For example.com:
+   Type: ANAME/ALIAS/CNAME
+   Name: @ (or leave blank)
+   Value: d1234abcd5678.cloudfront.net
+   ```
+
+   **Screenshot what AWS shows you** - you'll need these exact values.
+
+### **STEP 2: Configure DNS in Hostinger**
+
+1. **Log in to Hostinger**
+   - Go to https://hostinger.com
+   - Log in to your account
+   - Go to "Domains" section
+
+2. **Access DNS Settings**
+   - Click on your domain (`example.com`)
+   - Look for "DNS / Name Servers" or "DNS Zone"
+   - Click "Manage DNS" or "DNS Zone Editor"
+
+3. **Add CNAME Record for WWW**
+   
+   Click "Add Record" or "Add New Record":
+   
+   ```
+   Type: CNAME
+   Name: www
+   Points to: [Value from AWS Amplify]
+   TTL: 3600 (or 14400 - doesn't matter much)
+   ```
+
+   **Example**:
+   ```
+   Type: CNAME
+   Name: www
+   Points to: d1234abcd5678.cloudfront.net
+   TTL: 3600
+   ```
+
+   Click "Save" or "Add Record"
+
+4. **Handle Root Domain (example.com)**
+
+   **Hostinger supports several methods:**
+
+   **Method A: CNAME Flattening (Check if Available)**
+   - Some DNS providers support "CNAME Flattening"
+   - Add record:
+     ```
+     Type: CNAME
+     Name: @ (or leave blank for root)
+     Points to: [Value from AWS Amplify]
+     TTL: 3600
+     ```
+
+   **Method B: URL Redirect (Most Common)**
+   - In Hostinger, look for "Redirects" or "URL Forwarding"
+   - Set up redirect:
+     ```
+     From: example.com
+     To: https://www.example.com
+     Type: 301 (Permanent)
+     ```
+   - This redirects root to www subdomain
+
+   **Method C: A Record (If AWS Provides IP)**
+   - AWS usually doesn't provide static IP for Amplify
+   - Skip this method unless AWS specifically gives you an IP
+
+### **STEP 3: Verify DNS Configuration**
+
+1. **Wait for DNS Propagation**
+   - Takes 5 minutes to 48 hours
+   - Usually completes in 15-30 minutes
+
+2. **Check DNS in AWS Amplify**
+   - Go back to AWS Amplify → Domain management
+   - You'll see status:
+     ```
+     www.example.com - Pending verification
+     example.com - Pending verification
+     ```
+   - Wait until status changes to "Available"
+
+3. **Test with DNS Lookup Tool**
+   - Go to https://dnschecker.org
+   - Enter `www.example.com`
+   - Select "CNAME" type
+   - Check if it points to AWS domain
+   - Repeat for `example.com`
+
+### **STEP 4: SSL Certificate Configuration**
+
+AWS automatically provisions SSL certificate:
+
+1. **In AWS Amplify Console**
+   - Domain management section shows:
+     ```
+     SSL Certificate: Pending
+     ```
+
+2. **AWS Creates Certificate**
+   - Uses AWS Certificate Manager (ACM)
+   - Automatically validates domain ownership
+   - Issues free SSL certificate
+   - **Takes 15-30 minutes**
+
+3. **Certificate Validation**
+   - AWS may add TXT records for validation
+   - If required, AWS shows you:
+     ```
+     Type: TXT
+     Name: _acme-challenge.example.com
+     Value: [random string]
+     ```
+   - Add this record in Hostinger DNS (same as Step 2)
+
+4. **Final Status**
+   - Once complete, you'll see:
+     ```
+     www.example.com - Available (with SSL icon)
+     example.com - Available (with SSL icon)
+     ```
+
+---
+
+### Option 2: Use AWS Route 53 (More Complex but More Features)
+
+If you want advanced DNS features, transfer DNS to AWS Route 53:
+
+#### Process:
+
+1. **Create Hosted Zone in Route 53**
+   - AWS Console → Route 53
+   - Click "Create hosted zone"
+   - Enter domain: `example.com`
+   - Note the **4 nameservers** AWS provides
+
+2. **Update Nameservers in Hostinger**
+   - Hostinger → Domain → Nameservers
+   - Change from Hostinger nameservers to:
+     ```
+     ns-1234.awsdns-12.org
+     ns-5678.awsdns-34.com
+     ns-9012.awsdns-56.net
+     ns-3456.awsdns-78.co.uk
+     ```
+   - (Use the actual nameservers AWS gave you)
+
+3. **Configure in Amplify**
+   - Amplify automatically creates Route 53 records
+   - Supports ALIAS for root domain
+   - Everything managed in AWS
+
+**Pros:**
+- Full ALIAS record support
+- Better integration with AWS
+- Advanced routing options
+
+**Cons:**
+- Route 53 costs ~$0.50/month per domain
+- More complex setup
+- Have to manage DNS in AWS
+
+---
+
+## Visual Representation of DNS Flow
+
+### With CNAME (WWW subdomain):
+
+```
+User types: www.example.com
+     ↓
+Hostinger DNS (CNAME record)
+     ↓
+Points to: d1234.cloudfront.net
+     ↓
+AWS Amplify CDN
+     ↓
+Your Next.js Application
+```
+
+### With Root Domain Redirect:
+
+```
+User types: example.com
+     ↓
+Hostinger DNS (301 redirect)
+     ↓
+Redirects to: www.example.com
+     ↓
+Hostinger DNS (CNAME record)
+     ↓
+Points to: d1234.cloudfront.net
+     ↓
+AWS Amplify CDN
+     ↓
+Your Next.js Application
+```
+
+---
+
+## Complete DNS Setup Checklist
+
+### In Hostinger DNS Panel:
+
+- [ ] **CNAME Record Added**
+  ```
+  Type: CNAME
+  Name: www
+  Points to: [AWS Amplify domain]
+  TTL: 3600
+  Status: ✓ Saved
+  ```
+
+- [ ] **Root Domain Handled** (Choose one):
+  - [ ] URL Redirect: `example.com` → `www.example.com`
+  - [ ] CNAME Flattening (if supported)
+  - [ ] Switch to Route 53
+
+- [ ] **TXT Record for SSL** (if AWS requires):
+  ```
+  Type: TXT
+  Name: _acme-challenge
+  Value: [from AWS]
+  ```
+
+### In AWS Amplify:
+
+- [ ] Domain added and configured
+- [ ] DNS records verified (green checkmarks)
+- [ ] SSL certificate issued (padlock icon)
+- [ ] Both domains show "Available" status
+
+### Testing:
+
+- [ ] `https://www.example.com` loads correctly
+- [ ] `https://example.com` redirects or loads
+- [ ] SSL certificate valid (no browser warnings)
+- [ ] DNS propagation complete (check dnschecker.org)
+
+---
+
+## Troubleshooting Common Issues
+
+### Issue 1: DNS Not Propagating
+
+**Check:**
+```bash
+# On Mac/Linux terminal:
+nslookup www.example.com
+
+# Should return something like:
+# www.example.com canonical name = d1234.cloudfront.net
+```
+
+**Solution:**
+- Wait longer (up to 48 hours)
+- Clear DNS cache on your computer
+- Test from different network/device
+
+### Issue 2: SSL Certificate Pending
+
+**Cause:** AWS waiting for domain validation
+
+**Solution:**
+- Check if TXT record is added correctly
+- Wait 30 minutes
+- Contact AWS support if still pending after 24 hours
+
+### Issue 3: Domain Shows "Not Configured"
+
+**Solution:**
+- Double-check CNAME value matches exactly
+- Ensure no trailing dots in DNS records
+- Verify DNS records saved in Hostinger
+
+---
+
+## Summary
+
+### Build Process:
+- ✅ **No local build needed**
+- ✅ **Just provide commands in Amplify settings**
+- ✅ **AWS builds automatically in cloud**
+- ✅ **Default commands work for most Next.js apps**
+
+### Domain Configuration:
+- ✅ **Add CNAME record in Hostinger for www subdomain**
+- ✅ **Set up redirect or CNAME flattening for root domain**
+- ✅ **AWS handles SSL automatically (free)**
+- ✅ **Don't need your Hostinger SSL certificate**
+- ✅ **Wait 15-30 minutes for DNS + SSL**
+
+Your application will be accessible at:
+- `https://www.example.com` ← Primary URL
+- `https://example.com` ← Redirects to www
+
+This setup is production-ready and follows AWS best practices!
