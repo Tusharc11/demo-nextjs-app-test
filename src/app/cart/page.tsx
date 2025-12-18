@@ -1,4 +1,3 @@
-// src/app/cart/page.tsx
 import { getCartProducts } from "./serverCart";
 import CartClient from "./CartClient";
 
