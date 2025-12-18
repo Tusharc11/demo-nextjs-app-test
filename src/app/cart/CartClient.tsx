@@ -1,45 +1,29 @@
+// src/app/cart/CartClient.tsx
 "use client";
 
 import { CartItemCard } from "core/components/cart-item-card/cart-item-card";
 import { Summary } from "core/components/summary/summary";
 import styles from "./page.module.scss";
-import { FakeAPIProduct } from "core/types/product";
+import { CartItem } from "./serverCart";
 
-/**
- * Cart item structure
- */
-type CartItem = {
-  product: FakeAPIProduct;
-  quantity: number;
-};
-
-/**
- * Props expected by CartClient
- */
 type CartClientProps = {
   products: CartItem[];
 };
 
 export default function CartClient({ products }: CartClientProps) {
-  if (!products || products.length === 0) {
-    return <h1>Empty cart</h1>;
-  }
-
-  return (
+  return products.length > 0 ? (
     <>
-      <div className={styles["items"]}>
-        {products.map((item) => (
-          <CartItemCard
-            key={item.product.id}
-            product={item.product}
-            quantity={item.quantity}
-          />
+      <div className={styles.items}>
+        {products.map(p => (
+          <CartItemCard key={p.product.id} product={p.product} quantity={p.quantity} />
         ))}
       </div>
 
-      <div className={styles["summary"]}>
+      <div className={styles.summary}>
         <Summary />
       </div>
     </>
+  ) : (
+    <h1>Empty cart</h1>
   );
 }
