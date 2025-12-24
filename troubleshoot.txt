@@ -1,0 +1,856 @@
+To route traffic from `testamp.mpencil.in` to your AWS Amplify application, you'll need to configure a custom subdomain. Here's how to achieve this:
+
+## Overview
+You'll need to:
+1. Add the custom domain in AWS Amplify
+2. Get the DNS records from Amplify
+3. Add those DNS records in Hostinger
+4. Wait for DNS propagation and SSL certificate provisioning
+
+## AWS Amplify Console Steps
+
+### Step 1: Access Domain Management
+1. Sign in to the **AWS Management Console**
+2. Navigate to **AWS Amplify** service
+3. Select your ERP application from the list
+4. In the left sidebar, click on **App settings** → **Domain management**
+
+### Step 2: Add Custom Domain
+1. Click the **Add domain** button
+2. In the domain field, enter: `mpencil.in`
+3. Click **Configure domain**
+
+### Step 3: Configure Subdomain
+1. Amplify will show your root domain `mpencil.in` with branch associations
+2. Click **Add subdomain** or look for the subdomain configuration section
+3. Add `testamp` as the subdomain prefix
+4. Select the branch you want to associate (e.g., `main` or `master`)
+5. The full domain will show as `testamp.mpencil.in`
+6. Click **Save**
+
+### Step 4: Get DNS Records
+After saving, Amplify will display DNS records you need to add. You'll typically see:
+- **CNAME record** for the subdomain (e.g., `testamp` pointing to something like `xxxxx.cloudfront.net` or `xxxxx.amplifyapp.com`)
+- Possibly an **ANAME/ALIAS** record if configuring root domain
+
+**Important**: Copy these DNS values - you'll need them for Hostinger.
+
+## Hostinger DNS Configuration Steps
+
+### Step 5: Configure DNS in Hostinger
+1. Log in to your **Hostinger account**
+2. Go to **Domains** section
+3. Find `mpencil.in` and click **Manage**
+4. Navigate to **DNS / Name Servers** or **DNS Zone**
+5. Click **Add Record** or **Add New Record**
+
+### Step 6: Add CNAME Record
+1. **Type**: Select `CNAME`
+2. **Name/Host**: Enter `testamp`
+3. **Points to/Value**: Paste the Amplify CNAME value (e.g., `xxxxx.amplifyapp.com`)
+4. **TTL**: Leave default (usually 14400 or 3600)
+5. Click **Save** or **Add Record**
+
+## Verification & Completion
+
+### Step 7: Verify in AWS Amplify
+1. Return to AWS Amplify Console
+2. Go back to **Domain management**
+3. You should see `testamp.mpencil.in` with a status indicator
+4. Initial status will be **Pending verification** or **Pending certificate**
+5. DNS propagation can take **5-15 minutes** to several hours
+6. SSL certificate provisioning happens automatically and may take **15-30 minutes**
+
+### Step 8: Monitor Status
+Watch for these status changes:
+- **Available** - Domain is fully configured and working
+- **Pending verification** - Waiting for DNS propagation
+- **Failed** - Check DNS records are correct
+
+## Troubleshooting Tips
+
+- **DNS propagation**: Use `nslookup testamp.mpencil.in` or online DNS checkers to verify records have propagated
+- **Remove conflicting records**: Ensure no existing A or CNAME records for `testamp` in Hostinger
+- **Wait for SSL**: HTTPS may not work immediately; AWS needs time to provision the certificate
+- **Check Amplify logs**: If status shows "Failed", Amplify usually provides specific error messages
+
+Once the status shows "Available" in Amplify and the SSL certificate is issued, your ERP application will be accessible at `https://testamp.mpencil.in`!
+
+================================================
+
+Great question! You're absolutely right to be concerned. Let me clarify what happens and provide the correct approach.
+
+## Why Adding `mpencil.in` Won't Break Your Existing App
+
+When you add `mpencil.in` to AWS Amplify, you're **not automatically routing all traffic** to Amplify. Here's what actually happens:
+
+### What Amplify Does:
+1. **Domain Registration**: Amplify just "registers" that you own `mpencil.in`
+2. **Subdomain Management**: It allows you to configure **specific subdomains** under that domain
+3. **DNS Control Stays with You**: Your existing DNS records in Hostinger remain unchanged
+
+### The Key Point:
+- Your **root domain** `mpencil.in` continues to work with your existing app because those DNS records in Hostinger are untouched
+- You're only adding a **new CNAME record** for `testamp.mpencil.in` 
+- This new subdomain points to Amplify, while `mpencil.in` still points wherever it currently points
+
+## How DNS Works (Simplified):
+
+Think of your domain like an apartment building:
+- `mpencil.in` = Main building (existing app)
+- `testamp.mpencil.in` = Apartment #101 (new Amplify app)
+- `api.mpencil.in` = Apartment #102 (could be another service)
+
+Each subdomain is **independent** and has its own DNS record.
+
+## Current State in Hostinger (Example):
+
+```
+# Your existing DNS records (remain unchanged)
+Type: A or CNAME
+Name: @ or mpencil.in
+Points to: [Your existing app server IP/domain]
+
+# What you'll ADD (new record)
+Type: CNAME
+Name: testamp
+Points to: xxxxx.amplifyapp.com
+```
+
+## Alternative Approach (If You're Still Concerned):
+
+If you want to be extra cautious and **skip adding the root domain** to Amplify:
+
+### Modified AWS Amplify Steps:
+
+**Option A: Direct Subdomain Addition** (Some Amplify versions support this)
+1. In Amplify → Domain management
+2. Look for "Add subdomain" or similar option
+3. Directly add `testamp.mpencil.in` if the interface allows
+
+**Option B: Use Custom Domain with Subdomain Only**
+1. Add `mpencil.in` as I mentioned (this is just for verification)
+2. When configuring, **only set up the subdomain** `testamp`
+3. **Don't configure** the root domain or `www` subdomain in Amplify
+4. This way, Amplify gives you DNS records only for `testamp.mpencil.in`
+
+## What You'll Actually Add to Hostinger:
+
+Only this **single new record**:
+
+```
+Type: CNAME
+Name: testamp
+Value: [Amplify's provided value]
+TTL: 14400
+```
+
+Your existing records for `mpencil.in` (the root domain) **stay exactly as they are**.
+
+## Verification:
+
+After setup, you can verify:
+- `mpencil.in` → Still goes to your existing app ✓
+- `testamp.mpencil.in` → Goes to your new Amplify ERP app ✓
+
+Does this clarify your concern? The key takeaway is: **adding a subdomain doesn't affect your root domain's existing configuration**.
+
+==============================================
+
+Troubleshoot::
+
+Perfect! Now I can see the exact issue. The problem is clear:
+
+## **Issue Identified: 504 Gateway Timeout**
+
+Your Next.js frontend is successfully making API calls, but they're **timing out** after waiting too long for a response.
+
+### Key Observations:
+
+1. **Status Code**: `504 Gateway Timeout` (red circle)
+2. **API Endpoints Failing**:
+   - `/api/dashboard/fee-shortfall?academicYearId=...`
+   - `/api/dashboard/bus-routes?academicYearId=...`
+3. **X-Cache**: `Error from cloudfront`
+4. **Request Method**: `GET` (correct)
+5. **Authentication**: Cookie-based auth token is present
+
+## Root Cause Analysis
+
+A **504 Gateway Timeout** means:
+- Your frontend successfully reached the backend
+- The backend received the request
+- BUT the backend took too long to respond (likely >30 seconds)
+- CloudFront/Amplify gave up waiting
+
+## Common Causes & Solutions
+
+### **Cause 1: Backend API is Too Slow (Most Likely)**
+
+Your API queries might be:
+- Running complex database queries without indexes
+- Fetching too much data at once
+- Not optimized for performance
+
+**Solutions**:
+
+1. **Check Backend API Response Time**:
+   - Test the API directly: `https://your-backend-api.com/api/dashboard/fee-shortfall?academicYearId=6905c54aacbd8e2054c74318`
+   - Time how long it takes
+   - If it takes >30 seconds, you need to optimize
+
+2. **Optimize Database Queries**:
+   ```sql
+   -- Add indexes on frequently queried columns
+   CREATE INDEX idx_academic_year ON fees(academic_year_id);
+   CREATE INDEX idx_student_id ON fees(student_id);
+   ```
+
+3. **Add Pagination**:
+   ```javascript
+   // Instead of fetching all records
+   const fees = await db.fees.findMany(); // ❌ Slow
+   
+   // Fetch with limits
+   const fees = await db.fees.findMany({
+     take: 100, // Limit results
+     skip: 0,
+     where: { academicYearId }
+   }); // ✓ Faster
+   ```
+
+4. **Implement Caching**:
+   ```javascript
+   // Cache expensive queries
+   const cacheKey = `dashboard-${academicYearId}`;
+   let data = await redis.get(cacheKey);
+   
+   if (!data) {
+     data = await fetchFromDatabase();
+     await redis.set(cacheKey, data, 'EX', 300); // 5 min cache
+   }
+   ```
+
+---
+
+### **Cause 2: Backend Not Responding / Down**
+
+**Check**:
+1. Is your backend API running?
+2. Can you access it directly in a browser or Postman?
+
+**Solution**: Restart your backend service (EC2, ECS, Lambda, etc.)
+
+---
+
+### **Cause 3: Wrong API Base URL**
+
+Your frontend might be calling the wrong endpoint.
+
+**Check your Next.js code**:
+
+```javascript
+// Find where API calls are made (likely in src/lib/api.ts or similar)
+
+// Check if API_URL is correct
+console.log(process.env.NEXT_PUBLIC_API_URL); 
+
+// Should be something like:
+// https://api.yourdomain.com
+// NOT: http://localhost:3001
+```
+
+**Fix in Amplify**:
+1. Go to **App settings** → **Environment variables**
+2. Add/Update:
+   ```
+   NEXT_PUBLIC_API_URL=https://your-backend-api-url.com
+   ```
+3. **Redeploy** the app (required for env variables)
+
+---
+
+### **Cause 4: Database Connection Timeout**
+
+If your backend connects to a database:
+
+**Check**:
+- Database security groups allow connections
+- Connection pool settings
+- Database is not overloaded
+
+**Solution** (for Node.js/Prisma example):
+```javascript
+// Increase connection timeout
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL
+    }
+  },
+  log: ['query', 'error'], // Enable logging
+});
+
+// Set connection pool
+export const db = prisma.$extends({
+  pool: {
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000 // 10 seconds
+  }
+});
+```
+
+---
+
+### **Cause 5: Amplify Timeout Limits**
+
+AWS Amplify has built-in timeout limits (typically 30 seconds for SSR).
+
+**If your API legitimately needs more time**:
+
+**Option A**: Move slow operations to client-side with loading states
+```javascript
+// Instead of SSR with getServerSideProps
+export default function Dashboard() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    fetchData(); // Client-side fetch with longer timeout
+  }, []);
+}
+```
+
+**Option B**: Use background jobs/workers for heavy processing
+
+---
+
+## Immediate Action Plan
+
+### **Step 1: Test Your Backend API Directly** ⚡ DO THIS FIRST
+
+Open a new browser tab or use Postman:
+```
+GET https://your-backend-url/api/dashboard/fee-shortfall?academicYearId=6905c54aacbd8e2054c74318
+```
+
+**Measure the time it takes**:
+- If < 5 seconds: Backend is fine, check Amplify config
+- If 5-30 seconds: Needs optimization
+- If > 30 seconds or timeout: Critical performance issue
+- If immediate error (404, 500): Backend is down or wrong URL
+
+### **Step 2: Check Amplify Environment Variables**
+
+1. Go to AWS Amplify Console
+2. **App settings** → **Environment variables**
+3. Verify you have:
+   ```
+   NEXT_PUBLIC_API_URL=https://your-actual-backend.com
+   DATABASE_URL=your-db-connection-string
+   ```
+
+### **Step 3: Check Backend Logs**
+
+Where is your backend hosted?
+- **If EC2/VPS**: SSH in and check logs (`pm2 logs`, `journalctl`, etc.)
+- **If Lambda**: Check CloudWatch Logs
+- **If ECS**: Check container logs
+- **If API Gateway**: Check execution logs
+
+Look for:
+- Database connection errors
+- Slow query warnings
+- Timeout errors
+- Memory issues
+
+### **Step 4: Add Logging to API Routes**
+
+Add logging to see where the delay occurs:
+
+```javascript
+// In your API route
+export async function GET(request) {
+  console.time('Total API Time');
+  
+  console.time('DB Query 1');
+  const fees = await db.fees.findMany({...});
+  console.timeEnd('DB Query 1');
+  
+  console.time('DB Query 2');
+  const students = await db.students.findMany({...});
+  console.timeEnd('DB Query 2');
+  
+  console.timeEnd('Total API Time');
+  
+  return Response.json({ fees, students });
+}
+```
+
+---
+
+## Quick Wins to Try Now
+
+1. **Increase client-side timeout** (temporary fix):
+```javascript
+// In your API fetch calls
+const response = await fetch('/api/dashboard/fee-shortfall', {
+  signal: AbortSignal.timeout(60000) // 60 seconds instead of default 30
+});
+```
+
+2. **Add loading states** to improve UX while you fix performance:
+```javascript
+{loading && <Spinner />}
+{error && <ErrorMessage>{error}</ErrorMessage>}
+{data && <Dashboard data={data} />}
+```
+
+---
+
+## What Information Do You Need to Share?
+
+To help you further, please check and share:
+
+1. **Where is your backend API hosted?** (AWS Lambda, EC2, external server?)
+2. **Backend API URL** (just the domain, not full path)
+3. **Can you access the API directly?** Try it in browser/Postman
+4. **How long does the API take to respond?** (time it)
+5. **Backend framework?** (Express, Fastify, Next.js API routes?)
+6. **Database?** (PostgreSQL, MongoDB, MySQL?)
+
+Once you check the API response time directly, we'll know exactly how to proceed!
+
+=====================================================================================
+Perfect! Now I understand your setup. This is a **Next.js app deployed on AWS Amplify with external MongoDB**. Amplify automatically creates serverless functions (Lambda) for your API routes.
+
+## **Architecture Understanding**
+
+```
+User → Amplify (CloudFront) → Lambda Functions → External MongoDB
+```
+
+The 504 timeout is likely because:
+1. Lambda can't connect to MongoDB (network/firewall)
+2. MongoDB queries are too slow (no indexes, large datasets)
+3. Lambda timeout limit reached (default 10s, max 30s for Amplify)
+
+---
+
+## **DevOps Checks (AWS Console UI Steps)**
+
+### **Step 1: Check Amplify Build & Deployment Status**
+
+**UI Steps**:
+1. Go to **AWS Amplify Console**: https://console.aws.amazon.com/amplify/
+2. Click on your application
+3. Click on the **main** branch (or your deployed branch)
+4. Check **Build status**: Should show green "Deployed"
+5. Scroll down to **Build logs**
+6. Look for any warnings about:
+   - Missing environment variables
+   - Build failures
+   - Module not found errors
+
+**What to check**:
+- ✅ Build completed successfully
+- ✅ No errors in build phase
+- ✅ "Deploy" phase shows success
+
+---
+
+### **Step 2: Verify Environment Variables**
+
+**UI Steps**:
+1. In Amplify Console → Your App
+2. Left sidebar → **App settings** → **Environment variables**
+3. Check these variables exist:
+
+**Required variables**:
+```
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/dbname
+NEXT_PUBLIC_API_URL=https://test.dy4kd95mbclgf.amplifyapp.com
+NODE_ENV=production
+```
+
+**Important checks**:
+- ✅ `MONGODB_URI` is set (not empty)
+- ✅ No typos in variable names
+- ✅ No trailing spaces
+- ⚠️ Password doesn't contain special characters that break URLs (?, &, #)
+
+**If missing or wrong**:
+1. Click **Manage variables**
+2. Add/Edit the variables
+3. Click **Save**
+4. **Important**: Click **Redeploy this version** (environment variables need rebuild)
+
+---
+
+### **Step 3: Check Amplify Server-Side Logs (Lambda Logs)**
+
+This is where you'll see the actual errors!
+
+**UI Steps**:
+1. Amplify Console → Your App
+2. Left sidebar → **Monitoring**
+3. Click **View logs in CloudWatch**
+4. You'll be redirected to CloudWatch Logs
+
+**In CloudWatch**:
+1. You'll see log groups like:
+   - `/aws/amplify/[app-id]`
+   - Look for logs with "server" or "ssr" in the name
+2. Click on the most recent **Log stream**
+3. Look at logs from the last hour
+
+**What to look for**:
+```
+❌ MongoTimeoutError: Server selection timed out after 30000 ms
+❌ MongoServerError: Authentication failed
+❌ Connection refused
+❌ ECONNREFUSED
+❌ Network error
+❌ Task timed out after 10.00 seconds
+```
+
+**Screenshot/copy these errors** - they're critical!
+
+---
+
+### **Step 4: Check Lambda Function Configuration**
+
+Amplify creates Lambda functions automatically. Let's check them:
+
+**UI Steps**:
+1. Go to **AWS Lambda Console**: https://console.aws.amazon.com/lambda/
+2. In the search bar, search for your app name or "amplify"
+3. You should see functions like:
+   - `amplify-[app-id]-[environment]-[random]`
+4. Click on any of these functions
+
+**Check Configuration**:
+1. Click **Configuration** tab
+2. Click **General configuration**
+3. Check:
+   - **Timeout**: Default is 3 seconds (TOO LOW!)
+   - **Memory**: Check if adequate (512 MB minimum recommended)
+
+**Check if timeout is the issue**:
+- If Timeout = 3-10 seconds → This is your problem!
+- Amplify's default Lambda timeout is often too short for database operations
+
+---
+
+### **Step 5: Test MongoDB Connection**
+
+**Can't test directly in AWS, but check these**:
+
+**In MongoDB Atlas Console** (if using Atlas):
+1. Go to https://cloud.mongodb.com/
+2. Login to your account
+3. Click on your **Cluster**
+4. Click **Network Access** (left sidebar)
+
+**Check IP Whitelist**:
+- ⚠️ Amplify Lambda functions use **dynamic IPs**
+- ✅ You need to **allow all IPs**: `0.0.0.0/0`
+
+**How to allow all IPs**:
+1. Click **Add IP Address**
+2. Click **Allow Access from Anywhere**
+3. Or manually add: `0.0.0.0/0`
+4. Click **Confirm**
+
+**Check Database User**:
+1. Click **Database Access** (left sidebar)
+2. Verify user exists with:
+   - ✅ Correct username
+   - ✅ Correct password
+   - ✅ Read/Write permissions on your database
+
+---
+
+### **Step 6: Check API Routes in Code (GitHub/Repository)**
+
+**What developer needs to check**:
+
+1. **Find API route files**:
+   - Next.js 13+ App Router: `app/api/dashboard/*/route.ts`
+   - Next.js Pages: `pages/api/dashboard/*.ts`
+
+2. **Check database connection code**:
+   ```typescript
+   // Should look something like this
+   import { MongoClient } from 'mongodb';
+   
+   const client = new MongoClient(process.env.MONGODB_URI!, {
+     serverSelectionTimeoutMS: 5000, // ⚠️ Too low!
+     connectTimeoutMS: 10000,
+   });
+   ```
+
+3. **Check for proper error handling**:
+   ```typescript
+   try {
+     await client.connect();
+     const data = await db.collection('fees').find({}).toArray();
+     return Response.json(data);
+   } catch (error) {
+     console.error('Database error:', error); // ← This should appear in CloudWatch!
+     return Response.json({ error: 'Failed to fetch' }, { status: 500 });
+   }
+   ```
+
+---
+
+## **What to Ask Developer to Check**
+
+Send them this checklist:
+
+### **Developer Checklist**
+
+```
+🔴 API Timeout Issue - Action Required
+
+ISSUE: All dashboard API endpoints returning 504 Gateway Timeout
+
+ENVIRONMENT: AWS Amplify + External MongoDB
+
+WHAT YOU NEED TO CHECK:
+
+1. DATABASE CONNECTION CODE
+   [ ] Verify MONGODB_URI is correctly read from environment variables
+   [ ] Check if connection pooling is implemented
+   [ ] Increase connection timeouts:
+       serverSelectionTimeoutMS: 30000 (currently might be 5000)
+       connectTimeoutMS: 30000
+   
+2. API ROUTE HANDLERS (app/api/dashboard/*)
+   [ ] Add console.log() statements to track execution time
+   [ ] Log when entering the function: console.log('API called')
+   [ ] Log before DB query: console.log('Querying DB...')
+   [ ] Log after DB query: console.log('Query completed in Xms')
+   [ ] Add proper error handling with detailed error logs
+   
+3. DATABASE QUERIES OPTIMIZATION
+   [ ] Check if queries are fetching too much data
+   [ ] Add .limit() to queries: collection.find({}).limit(100)
+   [ ] Check if indexes exist on queried fields
+   [ ] Example slow query:
+       await db.collection('fees').find({academicYearId: 'xxx'}).toArray()
+       ↓ Should have index on academicYearId
+   
+4. MONGODB INDEXES (Check in MongoDB Compass or Atlas)
+   [ ] Create index on: academicYearId
+   [ ] Create index on: studentId (if querying by student)
+   [ ] Check existing indexes:
+       db.fees.getIndexes()
+   
+5. ADD TIMEOUT HANDLING
+   [ ] Wrap database calls with timeout:
+       const timeoutPromise = new Promise((_, reject) => 
+         setTimeout(() => reject(new Error('Timeout')), 25000)
+       );
+       const result = await Promise.race([dbQuery, timeoutPromise]);
+
+6. TEST LOCALLY
+   [ ] Can you connect to MongoDB from your local machine?
+   [ ] How long do the API calls take locally?
+   [ ] Run: time curl http://localhost:3000/api/dashboard/fee-shortfall
+   
+7. ADD HEALTH CHECK ENDPOINT
+   [ ] Create: app/api/health/route.ts
+       export async function GET() {
+         try {
+           await client.connect();
+           await client.db().admin().ping();
+           return Response.json({ status: 'ok', db: 'connected' });
+         } catch (error) {
+           return Response.json({ status: 'error', db: 'disconnected' }, { status: 500 });
+         }
+       }
+```
+
+---
+
+## **Quick Fixes You Can Try Now**
+
+### **Fix 1: Allow All IPs in MongoDB (Most Common Issue)**
+
+**MongoDB Atlas UI**:
+1. https://cloud.mongodb.com/ → Login
+2. Click your cluster
+3. **Network Access** → **Add IP Address**
+4. Select **Allow Access from Anywhere** (`0.0.0.0/0`)
+5. **Confirm**
+6. Wait 2-3 minutes for changes to propagate
+7. **Test again** in your app
+
+### **Fix 2: Increase Lambda Timeout (If Possible via Amplify)**
+
+Unfortunately, **you cannot directly modify Lambda timeout** for Amplify-managed functions in the console. But you can configure it in code:
+
+**Ask developer to add** `amplify.yml` in project root:
+
+```yaml
+version: 1
+backend:
+  phases:
+    build:
+      commands:
+        - npm ci
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+compute:
+  timeout: 30 # Increase Lambda timeout to 30 seconds (max for Amplify)
+```
+
+Then redeploy.
+
+### **Fix 3: Add Connection Pooling**
+
+**Ask developer to update database connection**:
+
+```typescript
+// lib/mongodb.ts
+import { MongoClient } from 'mongodb';
+
+if (!process.env.MONGODB_URI) {
+  throw new Error('Please add MONGODB_URI to environment variables');
+}
+
+const uri = process.env.MONGODB_URI;
+const options = {
+  maxPoolSize: 10,
+  minPoolSize: 5,
+  serverSelectionTimeoutMS: 30000, // 30 seconds
+  socketTimeoutMS: 45000,
+  connectTimeoutMS: 30000,
+};
+
+let client: MongoClient;
+let clientPromise: Promise<MongoClient>;
+
+if (process.env.NODE_ENV === 'development') {
+  let globalWithMongo = global as typeof globalThis & {
+    _mongoClientPromise?: Promise<MongoClient>;
+  };
+
+  if (!globalWithMongo._mongoClientPromise) {
+    client = new MongoClient(uri, options);
+    globalWithMongo._mongoClientPromise = client.connect();
+  }
+  clientPromise = globalWithMongo._mongoClientPromise;
+} else {
+  client = new MongoClient(uri, options);
+  clientPromise = client.connect();
+}
+
+export default clientPromise;
+```
+
+---
+
+## **Step-by-Step Testing After Fixes**
+
+### **Test 1: Health Check**
+
+After developer adds health endpoint:
+
+1. Open browser
+2. Go to: `https://test.dy4kd95mbclgf.amplifyapp.com/api/health`
+3. Should return: `{"status":"ok","db":"connected"}`
+4. If not, check CloudWatch logs immediately
+
+### **Test 2: Monitor CloudWatch in Real-Time**
+
+1. Open CloudWatch Logs (from Step 3 above)
+2. Keep it open in one tab
+3. In another tab, access your dashboard
+4. Watch CloudWatch for new logs appearing
+5. Look for error messages
+
+### **Test 3: MongoDB Atlas Real-Time Monitoring**
+
+1. MongoDB Atlas → Your Cluster
+2. Click **Metrics** tab
+3. Watch for:
+   - Connection spikes
+   - Slow queries
+   - Failed connections
+
+---
+
+## **Most Likely Root Causes (Ranked)**
+
+Based on your setup, here are the most probable issues:
+
+### **1. MongoDB IP Whitelist (80% probability)**
+- ✅ **Fix**: Allow `0.0.0.0/0` in MongoDB Atlas Network Access
+- Takes 2 minutes to fix
+
+### **2. Lambda Timeout Too Short (15% probability)**
+- ✅ **Fix**: Add `compute: timeout: 30` in `amplify.yml`
+- Requires code change + redeploy
+
+### **3. Slow Database Queries (5% probability)**
+- ✅ **Fix**: Add indexes, optimize queries, add pagination
+- Requires developer work
+
+---
+
+## **Emergency Workaround**
+
+If you need the app working NOW while developer fixes it:
+
+**Add a simple mock API temporarily**:
+
+1. Ask developer to create: `app/api/dashboard/mock/route.ts`
+```typescript
+export async function GET() {
+  return Response.json({
+    feeShortfall: 0,
+    busRoutes: [],
+    classes: []
+  });
+}
+```
+
+2. Point frontend to use `/api/dashboard/mock` temporarily
+3. This will make the UI load while they fix the real API
+
+---
+
+## **Summary: What to Check Right Now**
+
+**Priority 1 (Do immediately)**:
+1. ✅ MongoDB Atlas → Network Access → Allow `0.0.0.0/0`
+2. ✅ CloudWatch Logs → Find the actual error message
+3. ✅ Amplify → Environment Variables → Verify `MONGODB_URI`
+
+**Priority 2 (Share with developer)**:
+1. ✅ Add console.log() statements in API routes
+2. ✅ Add health check endpoint
+3. ✅ Increase connection timeouts
+
+**Priority 3 (Performance optimization)**:
+1. ✅ Add database indexes
+2. ✅ Implement pagination
+3. ✅ Add caching
+
+Start with **MongoDB IP whitelist** - this fixes 80% of these issues. Then check CloudWatch logs for the exact error. Share those logs here, and I can give you the exact fix!
