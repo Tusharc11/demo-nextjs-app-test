@@ -854,3 +854,323 @@ export async function GET() {
 3. ✅ Add caching
 
 Start with **MongoDB IP whitelist** - this fixes 80% of these issues. Then check CloudWatch logs for the exact error. Share those logs here, and I can give you the exact fix!
+===============================================================================
+================================================================================================
+Latest:
+This is a **classic Amplify + Next.js backend timeout scenario**, and your screenshots are very helpful 👍
+I’ll explain this **from a DevOps perspective**, step-by-step, with **UI paths**, **what to check**, and **exact questions to ask the developer**.
+
+You **don’t need to read application code** to narrow this down.
+
+---
+
+# What the error REALLY means (in simple terms)
+
+From your screenshots:
+
+* UI loads ✅
+* API calls like:
+
+  ```
+  /api/dashboard/bus-routes
+  /api/announcement
+  ```
+* All fail with:
+
+  ```
+  504 Gateway Timeout
+  Via: CloudFront
+  X-Amplify-Status: true
+  ```
+
+### 🔴 This tells us:
+
+> **CloudFront → Amplify → Backend did not respond in time**
+
+This is **NOT a DNS or SSL issue**
+This is **NOT a frontend hosting issue**
+
+This is a **backend execution problem**
+
+---
+
+# Architecture (important to understand)
+
+In Amplify (Next.js):
+
+```
+Browser
+  ↓
+CloudFront
+  ↓
+Amplify Hosting
+  ↓
+Next.js API routes (/api/*)
+  ↓
+Lambda (AWS-managed)
+  ↓
+Your backend logic (DB, APIs, S3, etc.)
+```
+
+A **504** means:
+
+* Lambda was invoked
+* But it **did not return a response in time**
+
+---
+
+# MOST COMMON ROOT CAUSES (90% cases)
+
+I’ll list them **in order of probability** based on your error.
+
+---
+
+## 1️⃣ Backend is calling something that is NOT reachable
+
+Examples:
+
+* DynamoDB **outside AWS** (you mentioned this earlier)
+* MongoDB / DB on private network
+* Backend API with IP allowlist
+* Corporate VPN dependency
+
+### Why this causes 504
+
+* Lambda tries to connect
+* Connection hangs
+* Lambda times out
+* CloudFront returns 504
+
+---
+
+## 2️⃣ Lambda timeout is too low
+
+Amplify API Lambdas have:
+
+* **Default timeout ~10 seconds**
+* Max allowed: **15 minutes** (but not enabled by default)
+
+If backend query is slow → timeout.
+
+---
+
+## 3️⃣ Environment variables missing in Amplify
+
+Very common.
+
+Example:
+
+* DB_HOST
+* DB_PASSWORD
+* API_BASE_URL
+
+If missing:
+
+* Code waits / retries
+* Eventually times out
+
+---
+
+## 4️⃣ App worked earlier on EC2 / local but fails on Amplify
+
+This usually means:
+
+* Hardcoded `localhost`
+* Private IPs
+* Non-public DB endpoint
+* Missing TLS config
+
+---
+
+# STEP-BY-STEP: How YOU troubleshoot (DevOps view)
+
+---
+
+## STEP 1: Confirm this is backend timeout (you already did)
+
+From Network tab:
+
+* Status: **504**
+* Via: **CloudFront**
+* X-Amplify-Status: **true**
+
+✅ Confirmed backend failure
+
+---
+
+## STEP 2: Check Amplify function logs (VERY IMPORTANT)
+
+### UI Steps
+
+1. AWS Console → **Amplify**
+2. Select your app
+3. Go to **Hosting**
+4. Click **Functions** (or **Backend environments → Functions**)
+5. You’ll see Lambda functions like:
+
+   ```
+   amplify-<app>-<env>-api
+   ```
+6. Click the function
+7. Click **View logs in CloudWatch**
+
+---
+
+### What to look for in logs
+
+Ask yourself:
+
+* Do you see logs?
+* Does execution start?
+* Where does it stop?
+
+Typical errors:
+
+* `ECONNREFUSED`
+* `ETIMEDOUT`
+* `MongoNetworkError`
+* `Unable to connect`
+* No logs at all → app hanging before logging
+
+---
+
+## STEP 3: Check Lambda timeout setting
+
+### UI Steps
+
+1. From the function → **Configuration**
+2. Click **General configuration**
+3. Check **Timeout**
+
+### What to do
+
+* If timeout < 30 seconds → increase to **60–120 seconds** (for testing)
+* Save
+
+⚠️ This is **temporary** to confirm root cause
+
+---
+
+## STEP 4: Verify Environment Variables in Amplify
+
+### UI Steps
+
+1. Amplify → App → **Hosting**
+2. Click **Environment variables**
+
+Check if all required values exist:
+
+* DB_HOST
+* DB_PORT
+* DB_USER
+* DB_PASSWORD
+* API URLs
+* S3 bucket name
+
+🔴 If even **one is missing**, backend can hang.
+
+---
+
+## STEP 5: Check networking (VERY IMPORTANT)
+
+Ask these questions (critical):
+
+### Ask the developer:
+
+> ❓ Where is the database hosted?
+
+Possible answers & meaning:
+
+| Answer                      | Problem                 |
+| --------------------------- | ----------------------- |
+| Local server                | ❌ Lambda cannot access  |
+| On-prem                     | ❌ Needs VPN             |
+| EC2 private subnet          | ❌ Needs VPC config      |
+| Mongo Atlas (IP restricted) | ❌ Lambda IP not allowed |
+| RDS public                  | ✅ Should work           |
+
+---
+
+## STEP 6: Check if API works locally
+
+Ask dev:
+
+> ❓ Does `/api/dashboard/bus-routes` work locally?
+
+If YES locally but fails in Amplify:
+
+* Networking / env issue
+  If NO locally:
+* Code bug
+
+---
+
+# WHAT TO ASK THE DEVELOPER (copy-paste)
+
+Send them this 👇
+
+---
+
+### 🔴 Amplify Backend Timeout – Questions for Dev
+
+1. Which backend does `/api/dashboard/*` call?
+
+   * DB name & location?
+2. Is the DB publicly accessible?
+3. Any IP allowlisting on DB / API?
+4. What environment variables are required?
+5. Is anything using:
+
+   * `localhost`
+   * private IP
+   * internal DNS
+6. What is the expected execution time for these APIs?
+7. Do these APIs work:
+
+   * locally?
+   * on previous hosting?
+
+---
+
+# VERY IMPORTANT: What this is NOT
+
+❌ Not an Amplify bug
+❌ Not a DNS issue
+❌ Not SSL issue
+❌ Not CloudFront issue
+
+This is **backend execution failing inside Lambda**
+
+---
+
+# QUICK DECISION TREE
+
+```
+UI loads?
+  └─ YES
+API returns 504?
+  └─ YES
+CloudFront in response?
+  └─ YES
+→ Backend Lambda timeout
+```
+
+---
+
+# FINAL RECOMMENDATION (as DevOps)
+
+1. **Check CloudWatch logs first**
+2. **Confirm DB/network accessibility**
+3. **Verify env variables**
+4. **Increase timeout temporarily**
+5. **Push developer for backend clarity**
+
+---
+
+If you want next, I can:
+
+* 🔍 Help you **read the CloudWatch logs**
+* 📋 Create a **backend readiness checklist**
+* 🧠 Suggest **better architecture** (API Gateway + Lambda / ECS)
+
+Just tell me what you want to do next.
